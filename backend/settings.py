@@ -2,9 +2,9 @@
 from pathlib import Path
 import os
 import sys
+import re
 from dotenv import load_dotenv
 import dj_database_url
-import re
 
 # --- Mitigar conflictos por agentes de Azure (OpenTelemetry) ---
 sys.path = [p for p in sys.path if "/agents/python" not in p]
@@ -18,54 +18,61 @@ def csv_env(name, default=""):
     raw = os.getenv(name, default)
     return [x.strip() for x in raw.split(",") if x.strip()]
 
-# --- Core ---
+# =========================
+# Core
+# =========================
 SECRET_KEY = os.getenv("SECRET_KEY", "!!!_dev_only_change_me_!!!")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-# --- Render: hostname externo si existe ---
-RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME", "")
-RENDER_HOSTS = [RENDER_EXTERNAL_HOSTNAME] if RENDER_EXTERNAL_HOSTNAME else []
-# permite cualquier subdominio onrender.com (útil en PR previews)
-RENDER_WILDCARD = ".onrender.com"
+# --- Railway: hosts permitidos ---
+# Puedes sobreescribir con ALLOWED_HOSTS en variables de entorno.
+DEFAULT_ALLOWED = [
+    ".railway.app",             # cualquier subdominio de Railway
+    "localhost", "127.0.0.1",
+    # agrega tu dominio exacto si ya lo conoces:
+    "quizgenai1-production.up.railway.app",
+]
+ALLOWED_HOSTS = csv_env("ALLOWED_HOSTS", ",".join(DEFAULT_ALLOWED))
 
-ALLOWED_HOSTS = csv_env(
-    "ALLOWED_HOSTS",
-    # Render + dev por defecto
-    f"{RENDER_WILDCARD},localhost,127.0.0.1,quizgenai-9xdk.onrender.com"
-) + RENDER_HOSTS
+# =========================
+# CORS / CSRF para frontend en Vercel
+# =========================
+# Tu frontend actual:
+FRONTEND_URL = "https://quiz-gen-ai-three.vercel.app"
 
-# --- CORS / CSRF ---
-# Autoriza tu frontend en Vercel + dev
 DEFAULT_CORS = [
-    "https://quiz-gen-ai-three.vercel.app",
+    FRONTEND_URL,
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    # (opcional) si tienes otra preview en Vercel
 ]
 CORS_ALLOWED_ORIGINS = csv_env("CORS_ALLOWED_ORIGINS", ",".join(DEFAULT_CORS))
 
-# Acepta cualquier subdominio *.vercel.app adicional
+# Acepta cualquier subdominio *.vercel.app (previews)
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
 ]
 
-# CSRF: incluye backend en Render y front en Vercel
+# Si no usas cookies/sesiones desde el browser, puedes dejar False.
+# Si sí envías cookies (SessionAuth/CSRF), déjalo True.
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+CORS_ALLOW_HEADERS = ["*"]
+
+# CSRF: confía en Railway + Vercel + localhost
 DEFAULT_CSRF = [
-    "https://*.onrender.com",
-    "https://quizgenai-9xdk.onrender.com",
+    "https://*.railway.app",
+    "https://quizgenai1-production.up.railway.app",
     "https://*.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
 CSRF_TRUSTED_ORIGINS = csv_env("CSRF_TRUSTED_ORIGINS", ",".join(DEFAULT_CSRF))
 
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-CORS_ALLOW_HEADERS = ["*"]
-
+# =========================
+# Apps / Middleware
+# =========================
 INSTALLED_APPS = [
-    # WhiteNoise recomienda desactivar staticfiles de runserver si usas Django<5,
-    # pero en Django 5 ya no hace falta. Mantén este orden:
     "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -78,7 +85,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    # CORS debe ir muy arriba
+    # CORS debe ir lo más arriba posible
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -110,17 +117,26 @@ TEMPLATES = [
 WSGI_APPLICATION = "backend.wsgi.application"
 ASGI_APPLICATION = "backend.asgi.application"
 
-# --- Base de datos ---
-# Render expone DATABASE_URL con sslmode=require.
+# =========================
+# Base de datos
+# =========================
+# Railway suele inyectar DATABASE_URL (Postgres).
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
+
+# Si es Postgres en Railway (sslmode=require), forzamos SSL.
+ssl_require = DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql://")
+
 DATABASES = {
     "default": dj_database_url.parse(
-        os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
+        DATABASE_URL,
         conn_max_age=600,
-        ssl_require=bool(os.getenv("DATABASE_URL", "")),  # True en Render
+        ssl_require=ssl_require,
     )
 }
 
-# --- Password validators ---
+# =========================
+# Password validators
+# =========================
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -128,34 +144,47 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# --- i18n / zona horaria ---
+# =========================
+# i18n / zona horaria
+# =========================
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# --- Archivos estáticos (Whitenoise) ---
+# =========================
+# Archivos estáticos (Whitenoise)
+# =========================
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"}
 }
-# Opcional: servir archivos subidos localmente (no recomendado en contenedor efímero)
-# MEDIA_URL = "/media/"
-# MEDIA_ROOT = BASE_DIR / "media"
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# --- Seguridad detrás de proxy (Render) ---
+# =========================
+# Seguridad detrás de proxy (Railway)
+# =========================
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Considera producción cuando NO está DEBUG
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
     USE_X_FORWARDED_HOST = True
-    # HSTS (actívalo cuando todo sirva bien por HTTPS)
+    # Activa HSTS cuando verifiques todo ok en HTTPS:
     # SECURE_HSTS_SECONDS = 31536000
     # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     # SECURE_HSTS_PRELOAD = True
+
+# =========================
+# DRF (opcional)
+# =========================
+# Si usas SessionAuthentication con cookies, necesitarás CSRF correcto.
+# Si solo usas llamadas tipo token/Bearer, puedes quitar SessionAuthentication.
+# REST_FRAMEWORK = {
+#     "DEFAULT_AUTHENTICATION_CLASSES": [
+#         "rest_framework.authentication.BasicAuthentication",
+#         "rest_framework.authentication.SessionAuthentication",
+#     ]
+# }
