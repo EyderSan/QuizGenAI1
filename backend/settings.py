@@ -2,9 +2,9 @@
 from pathlib import Path
 import os
 import sys
-import re
 from dotenv import load_dotenv
 import dj_database_url
+import re
 
 # --- Mitigar conflictos por agentes de Azure (OpenTelemetry) ---
 sys.path = [p for p in sys.path if "/agents/python" not in p]
@@ -13,10 +13,14 @@ os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")  # opcional en local
 
-# Helper para leer listas desde variables de entorno (coma-separadas)
+
+# =========================
+# Helpers
+# =========================
 def csv_env(name, default=""):
     raw = os.getenv(name, default)
     return [x.strip() for x in raw.split(",") if x.strip()]
+
 
 # =========================
 # Core
@@ -24,21 +28,26 @@ def csv_env(name, default=""):
 SECRET_KEY = os.getenv("SECRET_KEY", "!!!_dev_only_change_me_!!!")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-# --- Railway: hosts permitidos ---
-# Puedes sobreescribir con ALLOWED_HOSTS en variables de entorno.
+# Railway: por defecto aceptamos *.railway.app + localhost
 DEFAULT_ALLOWED = [
-    ".railway.app",             # cualquier subdominio de Railway
-    "localhost", "127.0.0.1",
-    # agrega tu dominio exacto si ya lo conoces:
+    ".railway.app",
+    "localhost",
+    "127.0.0.1",
+    # agrega aquí tu dominio exacto si ya lo conoces
     "quizgenai1-production.up.railway.app",
 ]
 ALLOWED_HOSTS = csv_env("ALLOWED_HOSTS", ",".join(DEFAULT_ALLOWED))
 
+# Útil si Railway está detrás de proxy
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+
 # =========================
-# CORS / CSRF para frontend en Vercel
+# CORS / CSRF
 # =========================
-# Tu frontend actual:
-FRONTEND_URL = "https://quiz-gen-ai-three.vercel.app"
+# Frontend principal (ajústalo si cambias Vercel)
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://quiz-gen-ai-three.vercel.app")
 
 DEFAULT_CORS = [
     FRONTEND_URL,
@@ -47,17 +56,33 @@ DEFAULT_CORS = [
 ]
 CORS_ALLOWED_ORIGINS = csv_env("CORS_ALLOWED_ORIGINS", ",".join(DEFAULT_CORS))
 
-# Acepta cualquier subdominio *.vercel.app (previews)
+# Permite cualquier preview de Vercel (*.vercel.app)
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
 ]
 
-# Si no usas cookies/sesiones desde el browser, puedes dejar False.
-# Si sí envías cookies (SessionAuth/CSRF), déjalo True.
+# Si necesitas abrir todo temporalmente para test:
+# export CORS_ALLOW_ALL_ORIGINS=True
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False").lower() == "true"
+
+# Si usas cookies/sesiones desde el browser (CSRF), deja True.
+# Si solo usas tokens/Bearer, podría ser False, pero dejar True no rompe.
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-CORS_ALLOW_HEADERS = ["*"]
+# Limitar headers a lo típico del preflight
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+# Max-Age del preflight (puedes bajarlo si lo prefieres)
+CORS_PREFLIGHT_MAX_AGE = 86400
 
 # CSRF: confía en Railway + Vercel + localhost
 DEFAULT_CSRF = [
@@ -69,11 +94,12 @@ DEFAULT_CSRF = [
 ]
 CSRF_TRUSTED_ORIGINS = csv_env("CSRF_TRUSTED_ORIGINS", ",".join(DEFAULT_CSRF))
 
+
 # =========================
 # Apps / Middleware
 # =========================
 INSTALLED_APPS = [
-    "corsheaders",
+    "corsheaders",  # <-- debe estar instalado
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -85,8 +111,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    # CORS debe ir lo más arriba posible
-    "corsheaders.middleware.CorsMiddleware",
+    "corsheaders.middleware.CorsMiddleware",  # <-- lo más arriba posible
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -117,13 +142,12 @@ TEMPLATES = [
 WSGI_APPLICATION = "backend.wsgi.application"
 ASGI_APPLICATION = "backend.asgi.application"
 
+
 # =========================
 # Base de datos
 # =========================
-# Railway suele inyectar DATABASE_URL (Postgres).
+# Railway inyecta DATABASE_URL si usas Postgres
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'db.sqlite3'}")
-
-# Si es Postgres en Railway (sslmode=require), forzamos SSL.
 ssl_require = DATABASE_URL.startswith("postgres://") or DATABASE_URL.startswith("postgresql://")
 
 DATABASES = {
@@ -133,6 +157,7 @@ DATABASES = {
         ssl_require=ssl_require,
     )
 }
+
 
 # =========================
 # Password validators
@@ -144,6 +169,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+
 # =========================
 # i18n / zona horaria
 # =========================
@@ -152,39 +178,42 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
+
 # =========================
 # Archivos estáticos (Whitenoise)
 # =========================
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STORAGES = {
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"}
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# =========================
-# Seguridad detrás de proxy (Railway)
-# =========================
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Nota: el warning "No directory at: /app/staticfiles/" se resuelve ejecutando
+# collectstatic en build/predeploy o creando el directorio vacío:
+#   python manage.py collectstatic --noinput
+#   (o) mkdir -p staticfiles
 
+
+# =========================
+# Seguridad en producción
+# =========================
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
-    USE_X_FORWARDED_HOST = True
     # Activa HSTS cuando verifiques todo ok en HTTPS:
     # SECURE_HSTS_SECONDS = 31536000
     # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     # SECURE_HSTS_PRELOAD = True
 
+
 # =========================
 # DRF (opcional)
 # =========================
-# Si usas SessionAuthentication con cookies, necesitarás CSRF correcto.
-# Si solo usas llamadas tipo token/Bearer, puedes quitar SessionAuthentication.
 # REST_FRAMEWORK = {
 #     "DEFAULT_AUTHENTICATION_CLASSES": [
-#         "rest_framework.authentication.BasicAuthentication",
 #         "rest_framework.authentication.SessionAuthentication",
-#     ]
+#         "rest_framework.authentication.BasicAuthentication",
+#     ],
 # }
