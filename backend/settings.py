@@ -1,4 +1,3 @@
-# backend/settings.py
 from pathlib import Path
 import os
 import sys
@@ -25,8 +24,8 @@ def csv_env(name, default=""):
 SECRET_KEY = os.getenv("SECRET_KEY", "!!!_dev_only_change_me_!!!")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-# # Evita redirecciones 301 (slash/no-slash) que rompen el preflight OPTIONS
-# APPEND_SLASH = False
+# Evita redirecciones 301 (slash/no-slash) que rompen el preflight OPTIONS
+APPEND_SLASH = False
 
 DEFAULT_ALLOWED = [
     ".railway.app",
@@ -36,8 +35,8 @@ DEFAULT_ALLOWED = [
 ]
 ALLOWED_HOSTS = csv_env("ALLOWED_HOSTS", ",".join(DEFAULT_ALLOWED))
 
-# USE_X_FORWARDED_HOST = True
-# SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # -------------------------
 # CORS / CSRF
@@ -51,14 +50,16 @@ DEFAULT_CORS = [
 ]
 CORS_ALLOWED_ORIGINS = csv_env("CORS_ALLOWED_ORIGINS", ",".join(DEFAULT_CORS))
 
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://.*\.vercel\.app$",
-]
+# Permite previews *.vercel.app
+CORS_ALLOWED_ORIGIN_REGEXES = [r"^https://.*\.vercel\.app$"]
 
-# Puedes abrir todo temporalmente via env: CORS_ALLOW_ALL_ORIGINS=True
-CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False").lower() == "true"
+# Abierto por defecto para estabilizar (ciérralo luego en variables)
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "True").lower() == "true"
+# Compatibilidad con versiones antiguas del paquete
+CORS_ORIGIN_ALLOW_ALL = CORS_ALLOW_ALL_ORIGINS
+CORS_ORIGIN_WHITELIST = CORS_ALLOWED_ORIGINS
+
 CORS_ALLOW_CREDENTIALS = True
-
 CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 CORS_ALLOW_HEADERS = [
     "accept",
@@ -71,6 +72,8 @@ CORS_ALLOW_HEADERS = [
     "x-requested-with",
 ]
 CORS_PREFLIGHT_MAX_AGE = 86400
+# Aplícalo a todo el sitio
+CORS_URLS_REGEX = r"^/.*$"
 
 DEFAULT_CSRF = [
     "https://*.railway.app",
@@ -97,7 +100,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",
+    "backend.fallback_cors.FallbackCORSMiddleware",  # <- airbag CORS/OPTIONS (temporal)
+    "corsheaders.middleware.CorsMiddleware",         # <- CORS oficial
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -160,15 +164,26 @@ USE_I18N = True
 USE_TZ = True
 
 # -------------------------
-# Estáticos (Whitenoise)
+# Estáticos (WhiteNoise)
 # -------------------------
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# crea la carpeta para evitar el warning en contenedores efímeros
+os.makedirs(STATIC_ROOT, exist_ok=True)
+
 STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # -------------------------
-# Security (prod)
+# Seguridad (prod)
 # -------------------------
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    # Activa HSTS cuando todo esté ok:
+    # SECURE_HSTS_SECONDS = 31536000
+    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    # SECURE_HSTS_PRELOAD = True
