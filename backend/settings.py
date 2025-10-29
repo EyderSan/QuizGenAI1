@@ -25,8 +25,8 @@ def csv_env(name, default=""):
 SECRET_KEY = os.getenv("SECRET_KEY", "!!!_dev_only_change_me_!!!")
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-# Evita redirecciones 301 (slash/no-slash) que rompen el preflight OPTIONS
-APPEND_SLASH = False
+# # Evita redirecciones 301 (slash/no-slash) que rompen el preflight OPTIONS
+# APPEND_SLASH = False
 
 DEFAULT_ALLOWED = [
     ".railway.app",
@@ -36,8 +36,8 @@ DEFAULT_ALLOWED = [
 ]
 ALLOWED_HOSTS = csv_env("ALLOWED_HOSTS", ",".join(DEFAULT_ALLOWED))
 
-USE_X_FORWARDED_HOST = True
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# USE_X_FORWARDED_HOST = True
+# SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # -------------------------
 # CORS / CSRF
@@ -172,11 +172,3 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # -------------------------
 # Security (prod)
 # -------------------------
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_SECURE = True
-    # HSTS cuando todo esté ok:
-    # SECURE_HSTS_SECONDS = 31536000
-    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    # SECURE_HSTS_PRELOAD = True
